@@ -79,19 +79,7 @@ Built with **Next.js 16 (App Router)**, **MongoDB**, **Auth.js v5**, **UploadThi
 
 ## Architecture
 
-### High‑level flow
-
-```mermaid
-flowchart LR
-    A[Browser<br/>RSC + TanStack] -->|HTTP| B[Next.js API<br/>Route Handlers]
-    B -->|Mongoose| C[(MongoDB)]
-    B -->|AIProvider| D[AI Provider<br/>OpenAI]
-    D -->|result image| E[UploadThing CDN]
-    E -->|public URL| B
-    B -->|JSON| A
-```
-
-<!-- ### High-level flow
+### High-level flow
 
 ```text
 +-------------+      HTTP      +---------------+     Mongoose     +-------------+
@@ -113,7 +101,7 @@ flowchart LR
                                |  UploadThing  |   <-- returns public URL
                                |     CDN       |
                                +---------------+
-``` -->
+```
 
 ### Key architectural decisions
 
