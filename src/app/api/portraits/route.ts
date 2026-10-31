@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/api/guards";
 import { ok, fail } from "@/lib/api/response";
 import Portrait from "@/lib/db/models/Portrait";
 import { z } from "zod";
+import { generatePortraitTitle } from "@/lib/ai/tagging";
 
 const portraitSchema = z.object({
   imageUrl: z.string().url(),
@@ -37,10 +38,20 @@ export const POST = withErrorHandling(async (req) => {
   const parsed = portraitSchema.safeParse(body);
   if (!parsed.success) return fail(400, parsed.error.flatten());
 
+  let name = parsed.data.name;
+  if (!name || name.trim() === "") {
+    try {
+      name = await generatePortraitTitle(parsed.data.imageUrl);
+    } catch (err) {
+      console.error("[PORTRAIT TITLE FAILED]", err);
+      name = `Portrait ${new Date().toISOString().slice(0, 10)}`;
+    }
+  }
+
   const portrait = await Portrait.create({
     userId: session!.user.id,
     imageUrl: parsed.data.imageUrl,
-    name: parsed.data.name,
+    name,
   });
 
   return ok(portrait, 201);

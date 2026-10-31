@@ -8,6 +8,7 @@ export function usePortraits() {
   return useQuery<IPortrait[]>({
     queryKey: ["portraits"],
     queryFn: async () => (await api.get("/portraits")).data,
+    staleTime: 0,             // always treat as stale — cheap GET, big UX win
   });
 }
 
@@ -16,7 +17,15 @@ export function useCreatePortrait() {
   return useMutation({
     mutationFn: async (input: { imageUrl: string; name?: string }) =>
       (await api.post<IPortrait>("/portraits", input)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["portraits"] }),
+    onSuccess: async (created) => {
+      // Optimistic insert so the UI reflects the new portrait instantly.
+      qc.setQueryData<IPortrait[]>(["portraits"], (prev = []) => [
+        created,
+        ...prev,
+      ]);
+      // Then reconcile with the server.
+      await qc.invalidateQueries({ queryKey: ["portraits"], refetchType: "all" });
+    },
   });
 }
 
@@ -26,6 +35,8 @@ export function useDeletePortrait() {
     mutationFn: async (id: string) => {
       await api.delete(`/portraits/${id}`);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["portraits"] }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["portraits"], refetchType: "all" });
+    },
   });
 }

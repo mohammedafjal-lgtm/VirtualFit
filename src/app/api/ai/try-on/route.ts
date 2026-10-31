@@ -6,22 +6,7 @@ import { tryOnSchema } from "@/lib/validators/try-on";
 import Portrait from "@/lib/db/models/Portrait";
 import ClothingItem from "@/lib/db/models/ClothingItem";
 import TryOnResult from "@/lib/db/models/TryOnResult";
-import { replicate, withTimeout } from "@/lib/ai/replicate";
-
-const IDM_VTON_VERSION =
-  "0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985";
-
-export const GET = withErrorHandling(async () => {
-  await connection();
-  const { session, response } = await requireAuth();
-  if (response) return response;
-
-  const results = await TryOnResult.find({ userId: session!.user.id })
-    .sort({ createdAt: -1 })
-    .lean();
-
-  return ok(results);
-});
+import { generateTryOn } from "@/lib/ai/try-on";
 
 export const POST = withErrorHandling(async (req) => {
   await connection();
@@ -59,6 +44,7 @@ export const POST = withErrorHandling(async (req) => {
     status: "pending",
   });
 
+  // Background worker — provider-agnostic call
   runTryOn(job._id.toString(), portrait.imageUrl, clothes).catch((err) => {
     console.error("[TRY-ON BACKGROUND ERROR]", err);
   });
@@ -75,48 +61,34 @@ async function runTryOn(
   }>
 ) {
   try {
-    let currentHuman = portraitUrl;
-
-    for (const cloth of clothes) {
-      const category = cloth.tags?.category ?? "upper_body";
-
-      const output = (await withTimeout(
-        replicate.run(`cuuupid/idm-vton:${IDM_VTON_VERSION}`, {
-          input: {
-            human_img: currentHuman,
-            garm_img: cloth.imageUrl,
-            garment_des: cloth.tags?.description ?? "clothing item",
-            category,
-            crop: false,
-            steps: 30,
-            seed: 42,
-            force_dc: false,
-            mask_only: false,
-          },
-        }),
-        180_000,
-        "IDM-VTON"
-      )) as unknown;
-
-      const file =
-        Array.isArray(output) && output.length > 0 ? output[0] : output;
-
-      if (!file || typeof (file as { url?: unknown }).url !== "function") {
-        throw new Error("AI returned an unexpected output format");
-      }
-
-      currentHuman = (file as { url: () => string }).url();
-    }
+    const result = await generateTryOn({
+      personImageUrl: portraitUrl,
+      garmentImageUrls: clothes.map((c) => c.imageUrl),
+      garmentDescriptions: clothes.map((c) => c.tags?.description ?? ""),
+      garmentCategories: clothes.map((c) => c.tags?.category ?? ""),
+    });
 
     await TryOnResult.findByIdAndUpdate(jobId, {
-      resultUrl: currentHuman,
+      resultUrl: result.resultUrl,
       status: "completed",
     });
   } catch (err) {
     console.error("[TRY-ON FAILED]", err);
+
+    let message = "AI generation failed";
+    if (err instanceof Error) {
+      if (err.message.includes("402") || err.message.includes("billing")) {
+        message = "AI service billing issue. Contact support.";
+      } else if (err.message.includes("content_policy")) {
+        message = "The image was rejected by the AI safety filter. Try different photos.";
+      } else {
+        message = err.message;
+      }
+    }
+
     await TryOnResult.findByIdAndUpdate(jobId, {
       status: "failed",
-      error: err instanceof Error ? err.message : "Unknown AI error",
+      error: message,
     });
   }
 }

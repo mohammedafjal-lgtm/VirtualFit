@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { auth } from "@/lib/auth";
 import { Shirt, Sparkles, User } from "lucide-react";
 
@@ -32,7 +33,11 @@ export default function Home() {
           look — instantly, in the browser.
         </p>
         <div className="mt-10 flex items-center justify-center gap-4">
-          <Suspense fallback={null}>
+          <Suspense
+            fallback={
+              <div className="h-12 w-48 rounded-lg bg-slate-200 animate-pulse" />
+            }
+          >
             <HeroCta />
           </Suspense>
           <Link
@@ -66,6 +71,7 @@ export default function Home() {
 }
 
 async function AuthButtons() {
+  await connection(); // ← request-bound: everything below runs per-request
   const session = await auth();
 
   if (session?.user) {
@@ -98,6 +104,7 @@ async function AuthButtons() {
 }
 
 async function HeroCta() {
+  await connection(); // ← request-bound
   const session = await auth();
 
   return (

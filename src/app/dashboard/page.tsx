@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db/connect";
@@ -6,7 +7,17 @@ import Portrait from "@/lib/db/models/Portrait";
 import TryOnResult from "@/lib/db/models/TryOnResult";
 import { Shirt, User, Sparkles, ArrowRight } from "lucide-react";
 
-export default async function DashboardOverview() {
+// Static shell — renders instantly, no request data
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<OverviewSkeleton />}>
+      <DashboardOverview />
+    </Suspense>
+  );
+}
+
+// Dynamic island — session + DB reads happen here, behind Suspense
+async function DashboardOverview() {
   const session = await auth();
   if (!session?.user?.id) return null;
 
@@ -91,5 +102,28 @@ function StatCard({
       </div>
       <p className="mt-3 text-3xl font-semibold text-slate-900">{value}</p>
     </Link>
+  );
+}
+
+function OverviewSkeleton() {
+  return (
+    <div className="space-y-8">
+      <div className="space-y-2">
+        <div className="h-8 w-64 rounded bg-slate-200 animate-pulse" />
+        <div className="h-4 w-96 rounded bg-slate-200 animate-pulse" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div
+            key={i}
+            className="rounded-xl border border-slate-200 bg-white p-5"
+          >
+            <div className="h-4 w-24 rounded bg-slate-200 animate-pulse" />
+            <div className="mt-3 h-9 w-16 rounded bg-slate-200 animate-pulse" />
+          </div>
+        ))}
+      </div>
+      <div className="h-32 rounded-xl bg-indigo-100 animate-pulse" />
+    </div>
   );
 }
