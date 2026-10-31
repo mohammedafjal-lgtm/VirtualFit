@@ -14,12 +14,19 @@ export function UploadPortraitForm() {
 
   const { startUpload, isUploading } = useUploadThing("portraitUploader", {
     onClientUploadComplete: async (res) => {
-      const url = res[0]?.serverData?.url;
+      const file = res?.[0];
+
+      // ✅ Clean v7 extraction (NO file.url access)
+      const url = file?.ufsUrl || file?.serverData?.url;
+
       if (!url) {
-        toast.error("Upload returned no URL");
+        console.error("[UPLOAD] No URL in response:", res);
+        toast.error("Upload finished but no file URL was returned. Please try again.");
         return;
       }
+
       setPreviewUrl(url);
+
       try {
         await create.mutateAsync({ imageUrl: url, name: name || undefined });
         toast.success("Portrait added");
@@ -37,6 +44,10 @@ export function UploadPortraitForm() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Only image files are allowed");
+      return;
+    }
     if (file.size > 8 * 1024 * 1024) {
       toast.error("File must be under 8MB");
       return;

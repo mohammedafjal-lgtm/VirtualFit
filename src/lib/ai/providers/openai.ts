@@ -39,13 +39,15 @@ export class OpenAIProvider implements AIProvider {
                 type: "input_text",
                 text:
                   "You are a fashion expert. Analyze the clothing item in the image. " +
-                  "Return ONLY valid JSON with keys: category (upper_body | lower_body | dresses), " +
-                  "color, style, season, description. No markdown, no extra text.",
+                  "Return ONLY valid JSON with keys: category (upper_body | lower_body | dresses | full_body), " +
+                  "color, style, season, description. " +
+                  "If the image shows a complete matching outfit (like a suit, set, or jumpsuit), use 'full_body'. " +
+                  "No markdown, no extra text.",
               },
               {
                 type: "input_image",
                 image_url: imageUrl,
-                detail: "auto",   // ← required by OpenAI SDK v7.46+
+                detail: "auto",
               },
             ],
           },
@@ -59,11 +61,33 @@ export class OpenAIProvider implements AIProvider {
 
       const parsed = JSON.parse(match[0]) as ClothingTags;
 
-      if (
-        parsed.category &&
-        !["upper_body", "lower_body", "dresses"].includes(parsed.category)
-      ) {
-        parsed.category = "upper_body";
+      const validCategories = ["upper_body", "lower_body", "dresses", "full_body"];
+      
+      // Intercept hallucinated categories (e.g., "suit", "outfit") and map them correctly
+      if (parsed.category && !validCategories.includes(parsed.category)) {
+        const lowerCat = parsed.category.toLowerCase();
+        
+        if (
+          lowerCat.includes("suit") || 
+          lowerCat.includes("set") || 
+          lowerCat.includes("full") || 
+          lowerCat.includes("outfit") ||
+          lowerCat.includes("jumpsuit")
+        ) {
+          parsed.category = "full_body";
+        } else if (
+          lowerCat.includes("pant") || 
+          lowerCat.includes("skirt") || 
+          lowerCat.includes("short") || 
+          lowerCat.includes("jeans") ||
+          lowerCat.includes("trouser")
+        ) {
+          parsed.category = "lower_body";
+        } else if (lowerCat.includes("dress")) {
+          parsed.category = "dresses";
+        } else {
+          parsed.category = "upper_body"; // Final fallback
+        }
       }
 
       return parsed;
@@ -92,7 +116,7 @@ export class OpenAIProvider implements AIProvider {
               {
                 type: "input_image",
                 image_url: imageUrl,
-                detail: "auto",   // ← required by OpenAI SDK v7.46+
+                detail: "auto",
               },
             ],
           },

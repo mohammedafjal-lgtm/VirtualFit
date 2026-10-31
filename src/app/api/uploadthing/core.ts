@@ -14,7 +14,9 @@ export const ourFileRouter = {
       return { userId: session.user.id };
     })
     .onUploadComplete(async ({ metadata, file }) => {
-      return { uploadedBy: metadata.userId, url: file.ufsUrl };
+      // Server-side fallback is safe and prevents browser warnings.
+      const url = file.ufsUrl || file.url;
+      return { uploadedBy: metadata.userId, url };
     }),
 
   portraitUploader: f({
@@ -26,7 +28,8 @@ export const ourFileRouter = {
       return { userId: session.user.id };
     })
     .onUploadComplete(async ({ metadata, file }) => {
-      return { uploadedBy: metadata.userId, url: file.ufsUrl };
+      const url = file.ufsUrl || file.url;
+      return { uploadedBy: metadata.userId, url };
     }),
 } satisfies FileRouter;
 
