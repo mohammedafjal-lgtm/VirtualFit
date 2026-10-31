@@ -147,7 +147,7 @@ Next.js 16 renamed the convention and moved it to the Node runtime, which lets `
 
 ## Project Structure
 
-.
+```.
 ├── docs/
 │   ├── content.md
 │   └── folder-structure-cmd.md
@@ -257,7 +257,7 @@ Next.js 16 renamed the convention and moved it to the Node runtime, which lets `
 ├── pnpm-workspace.yaml
 ├── tsconfig.json
 └── README.md
-
+```
 ---
 
 ## Prerequisites
