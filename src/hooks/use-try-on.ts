@@ -7,7 +7,7 @@ import type { ITryOnResult } from "@/types";
 export function useGenerateTryOn() {
   return useMutation({
     mutationFn: async (input: { portraitId: string; clothingIds: string[] }) =>
-      (await api.post<{ jobId: string; status: "pending" }>("/ai/try-on", input))
+      (await api.post<{ jobId: string; status: "pending" }>("/try-on", input))
         .data,
   });
 }
@@ -15,7 +15,7 @@ export function useGenerateTryOn() {
 export function usePollTryOn(jobId: string | null) {
   return useQuery<ITryOnResult>({
     queryKey: ["try-on", jobId],
-    queryFn: async () => (await api.get(`/ai/try-on/${jobId}`)).data,
+    queryFn: async () => (await api.get(`/try-on/${jobId}`)).data,
     enabled: !!jobId,
     refetchInterval: (query) => {
       const s = query.state.data?.status;
@@ -27,6 +27,6 @@ export function usePollTryOn(jobId: string | null) {
 export function useTryOnHistory() {
   return useQuery<ITryOnResult[]>({
     queryKey: ["try-on-history"],
-    queryFn: async () => (await api.get("/ai/try-on")).data,
+    queryFn: async () => (await api.get("/try-on")).data,
   });
 }

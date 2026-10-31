@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
-
-const MONGODB_URI = process.env.MONGODB_URI;
+import { env } from "@/config/env";
+const MONGODB_URI = env.MONGODB_URI;
 
 if (!MONGODB_URI) {
   throw new Error('Missing environment variable: "MONGODB_URI"');

@@ -1,186 +1,616 @@
-## 🔐 Environment Credentials Setup
+# VirtualFit
 
-This guide walks you through obtaining and configuring every secret VirtualFit needs to run. Create a file named `.env.local` in your project root and fill it in as you go.
+> Try on clothes without trying them on.
 
-> **⚠️ Never commit `.env.local` to Git.** Add it to `.gitignore` if it is not already there.
+VirtualFit is a single‑app virtual try‑on platform. Users upload individual garments, upload a portrait, pick an outfit, and the AI generates a photorealistic image of them wearing it. Every generated look is saved to a history gallery.
 
----
-
-### 1. MongoDB (`MONGODB_URI`)
-
-**What it is:** A connection string that tells your app (and the Auth.js adapter) how to reach your MongoDB database. You have two options: a free cloud database (Atlas) or a local instance.
-
-#### Option A — MongoDB Atlas (Free Cloud) — *Recommended for production*
-
-MongoDB Atlas's **M0 free tier** provides 512 MB of storage with no credit card required — more than enough for development and a small production app.
-
-**Steps:**
-
-1. **Create an account:** Go to [mongodb.com/atlas](https://www.mongodb.com/atlas) and sign up.
-2. **Create a free cluster:** Click **Build a Database** → select the **M0 Free tier** → choose a cloud provider and region → name your cluster → **Create Deployment**. Provisioning takes 1–3 minutes.
-3. **Create a database user:** You will be prompted to set a **username** and a **strong password**. Save this password — you will need it for the connection string. Avoid special characters like `@`, `:`, or `/` as they require URL encoding.
-4. **Whitelist your IP:** Go to **Network Access** → **Add IP Address**. For development, choose **Allow Access from Anywhere** (`0.0.0.0/0`).
-5. **Get your connection string:** Go to **Database** → click **Connect** on your cluster → **Drivers** → select **Node.js** → copy the connection string. It looks like this:
-   ```
-   mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
-   ```
-6. **Form your final URI:** Replace `<username>` and `<password>` with your database credentials, and insert the database name `virtualfit` after the host and before the `?`:
-
-   ```env
-   MONGODB_URI=mongodb+srv://yourUser:yourPassword@cluster0.xxxxx.mongodb.net/virtualfit?retryWrites=true&w=majority&appName=Cluster0
-   ```
-
-#### Option B — Local MongoDB — *Best for development*
-
-If you already have MongoDB running locally (e.g., via Homebrew), use a local connection string. No username or password is needed by default.
-
-```env
-MONGODB_URI=mongodb://localhost:27017/virtualfit
-```
-
-The `/virtualfit` part is the database name; MongoDB will create it automatically on the first write.
-
-> **Important:** The same `MONGODB_URI` is used by both `src/lib/mongodb.ts` (for the Auth.js adapter) and `src/lib/db/connect.ts` (for Mongoose). Keep them pointing to the same database, or users and clothing data will be split across two databases.
+Built with **Next.js 16 (App Router)**, **MongoDB**, **Auth.js v5**, **UploadThing v7**, **TanStack Query v5**, and a **model‑agnostic AI provider layer** — currently backed by **OpenAI**, designed so any provider can be swapped in with one line.
 
 ---
 
-### 2. Auth Secret (`AUTH_SECRET`)
+## Table of Contents
 
-**What it is:** A cryptographically random string used by Auth.js to **sign and verify JWTs**, **encrypt session cookies**, and **verify CSRF tokens**. If the secret changes, all existing sessions become invalid. It must be at least 32 bytes (256 bits) of random data.
-
-**How to generate it:**
-
-You have several options. Choose one and run the command in your terminal.
-
-| Method | Command |
-|---|---|
-| **OpenSSL** (recommended) | `openssl rand -base64 32` |
-| **Auth.js CLI** (v5) | `npx auth secret` |
-| **Node.js** (if OpenSSL isn't available) | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
-
-The OpenSSL command generates 32 random bytes and base64-encodes them — exactly what Auth.js expects.
-
-**Set it in `.env.local`:**
-
-```env
-AUTH_SECRET=<paste the generated string here>
-```
-
-> **Do not** use a human-readable passphrase like `my-super-secret-key`. It must be cryptographically random. In Auth.js v5, the variable is `AUTH_SECRET` (the old `NEXTAUTH_SECRET` is only kept for backward compatibility).
-
-You also need:
-
-```env
-AUTH_URL=http://localhost:3000
-```
-
-This tells Auth.js the base URL for redirects and cookie domains.
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Environment Credentials](#environment-credentials)
+- [AI Provider System](#ai-provider-system)
+- [Database Schema](#database-schema)
+- [API Reference](#api-reference)
+- [Scripts](#scripts)
+- [Deployment](#deployment)
+- [Troubleshooting](#troubleshooting)
+- [Security](#security)
+- [Roadmap](#roadmap)
 
 ---
 
-### 3. UploadThing Token (`UPLOADTHING_TOKEN`)
+## Features
 
-**What it is:** In UploadThing v7, the old `UPLOADTHING_SECRET` has been replaced by a single `UPLOADTHING_TOKEN`. This token is a **base64-encoded JSON object** that contains your app ID, app region, and API key — everything the SDK needs to generate presigned upload URLs.
+### Authentication
+- Email/password registration and login (bcrypt + Auth.js v5 credentials provider)
+- JWT session strategy with httpOnly cookies
+- Route protection via `src/proxy.ts` (Next.js 16 Node runtime — not Edge)
+- Per‑request auth guard on every API route
 
-**How to get it:**
+### Wardrobe
+- Upload one garment at a time (8 MB, image only)
+- AI auto‑tags each item: category, color, style, season, description
+- Grid view with delete action (ownership‑checked)
+- Items are strictly per‑user
 
-1. **Sign up / log in:** Go to [uploadthing.com](https://uploadthing.com/) and create a free account.
-2. **Create an app:** In your dashboard, create a new app.
-3. **Get the token:** Navigate to the **API Keys** section of your app's dashboard and make sure you are on the **V7** tab. Copy the token. It will look like `ut_xxx` or a longer base64 string.
+### Portraits
+- Upload labeled portraits (label optional)
+- AI generates a title when no label is provided
+- Same isolation and deletion model as wardrobe
 
-**Set it in `.env.local`:**
+### Virtual Try‑On
+- Async job model: `POST /api/try-on` returns `202` with a `jobId`
+- Background worker calls the AI provider and updates the job row
+- Client polls `GET /api/try-on/[id]` every 3 s until status flips
+- Result persisted to UploadThing CDN and saved in `tryonresults`
 
-```env
-UPLOADTHING_TOKEN=your_token_here
-```
-
-> **Troubleshooting:** If your uploads fail with an "Upload returned no URL" error, double-check that the token is from the **V7** tab, not an older secret key. The token format changed in v7.
-
----
-
-### 4. Replicate API Token (`REPLICATE_API_TOKEN`)
-
-**What it is:** A bearer token that authorizes your app to run AI models (like IDM-VTON for try-on and LLaVA for tagging) on Replicate's cloud infrastructure.
-
-**How to get it:**
-
-1. **Sign up / log in:** Go to [replicate.com](https://replicate.com) and create an account.
-2. **Navigate to API tokens:** Go directly to [replicate.com/account/api-tokens](https://replicate.com/account/api-tokens) (or click your avatar → **Account settings** → **API Tokens**).
-3. **Create a token:** Click **Create a new API token** (or copy the default one). **Copy the token immediately** — it will start with `r8_` and is only shown once.
-
-**Set it in `.env.local`:**
-
-```env
-REPLICATE_API_TOKEN=r8_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-> **Important:** Replicate is a prepaid service. IDM-VTON costs approximately **$0.024 per run**. If your account has no remaining credit, every API call will fail with `402 Payment Required`. Add credit at [replicate.com/account/billing](https://replicate.com/account/billing) before testing try-ons.
+### History
+- List view with status indicators
+- Detail page showing result + portrait + garments
+- Ownership‑checked at both levels
 
 ---
 
-### ✅ Complete `.env.local` Template
+## Tech Stack
 
-After following all four sections, your `.env.local` should look like this:
-
-```env
-# MongoDB — choose ONE of the two options below
-# Option A: Local MongoDB (development)
-MONGODB_URI=mongodb://localhost:27017/virtualfit
-
-# Option B: MongoDB Atlas (production)
-# MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/virtualfit?retryWrites=true&w=majority&appName=Cluster0
-
-# Auth.js
-AUTH_SECRET=<your generated 32-byte random string>
-AUTH_URL=http://localhost:3000
-
-# UploadThing (v7 token)
-UPLOADTHING_TOKEN=ut_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# Replicate
-REPLICATE_API_TOKEN=r8_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+| Layer | Choice | Why |
+|---|---|---|
+| Framework | Next.js 16 (App Router, Turbopack) | Single app, native route handlers, RSC |
+| Language | TypeScript (strict) | Type safety across AI payloads & Mongoose models |
+| Database | MongoDB + Mongoose | Flexible schema for tags; global connection cache |
+| Auth | Auth.js v5 + `@auth/mongodb-adapter` | App Router native, MongoDB session storage |
+| Uploads | UploadThing v7 | Type‑safe, CDN‑backed, Next.js native |
+| AI | **Provider abstraction** (OpenAI adapter by default) | Swap providers without touching route handlers |
+| Client data | TanStack Query v5 + Axios | Cache, polling, optimistic updates |
+| Validation | Zod | Shared schemas between client and server |
+| UI | Tailwind CSS + `lucide-react` | Consistent design, no runtime CSS‑in‑JS |
+| Runtime | Node.js 20+ | Required for `mongodb`, `sharp`, `Buffer`, `crypto.randomUUID` |
 
 ---
 
-### 🚀 Verify Your Setup
+## Architecture
 
-Once your `.env.local` is filled in, run the development server:
+### High‑level flow
+
+```mermaid
+flowchart LR
+    A[Browser<br/>RSC + TanStack] -->|HTTP| B[Next.js API<br/>Route Handlers]
+    B -->|Mongoose| C[(MongoDB)]
+    B -->|AIProvider| D[AI Provider<br/>OpenAI]
+    D -->|result image| E[UploadThing CDN]
+    E -->|public URL| B
+    B -->|JSON| A
+```
+
+### High-level flow
+
+```text
++-------------+      HTTP      +---------------+     Mongoose     +-------------+
+|   Browser   |  ----------->  |   Next.js     |  ------------->  |   MongoDB   |
+|  RSC +      |                |   API Route   |                  |             |
+|  TanStack   |  <-----------  |   Handlers    |  <-------------  |             |
++-------------+      JSON      +-------+-------+                  +-------------+
+                                       |
+                                       | AIProvider interface
+                                       v
+                               +---------------+                  +-------------+
+                               |  AI Provider  |  ------------->  |   OpenAI    |
+                               |  (adapter)    |                  |             |
+                               +-------+-------+                  +-------------+
+                                       |
+                                       | persist image
+                                       v
+                               +---------------+
+                               |  UploadThing  |   <-- returns public URL
+                               |     CDN       |
+                               +---------------+
+```
+
+### Key architectural decisions
+
+**1. No Express, no `next-connect`**
+
+All routes are pure `export const GET/POST = ...` handlers. Auth, DB, and validation are explicit helper calls:
+
+```ts
+export const POST = withErrorHandling(async (req) => {
+  await connection();
+  const { session, response } = await requireAuth();
+  if (response) return response;
+  // ...
+});
+```
+
+**2. Async try‑on job model**
+
+AI generation takes 20–90 s. A synchronous route would hit serverless timeouts. The route:
+
+1. Validates ownership
+2. Creates a `pending` `TryOnResult`
+3. Fires the background worker (fire‑and‑forget)
+4. Returns `202 { jobId }`
+
+The client polls with TanStack Query and stops automatically when status is terminal.
+
+**3. Provider abstraction**
+
+Route handlers call `generateTryOn()` / `tagClothing()` from `src/lib/ai/tagging.ts` and `src/lib/ai/try-on.ts`. These delegate to whatever `AIProvider` implementation the `AI_PROVIDER` env var selects. Adding a second provider = one file + one line in `providers/index.ts`.
+
+**4. Next.js 16 Cache Components compatibility**
+
+- Every authenticated route handler begins with `await connection()` (opt out of static prerender)
+- Every component that reads `auth()` is wrapped in `<Suspense>` **and** starts with `await connection()`
+- `SessionProvider` was removed (nothing calls `useSession()`)
+
+**5. `proxy.ts`, not `middleware.ts`**
+
+Next.js 16 renamed the convention and moved it to the Node runtime, which lets `@auth/mongodb-adapter` resolve `mongodb` without Edge bundling failures.
+
+---
+
+## Project Structure
+
+.
+├── docs/
+│   ├── content.md
+│   └── folder-structure-cmd.md
+├── public/
+├── src/
+│   ├── app/
+│   │   ├── (auth)/
+│   │   │   ├── layout.tsx
+│   │   │   ├── login/page.tsx
+│   │   │   └── register/page.tsx
+│   │   ├── (dashboard)/
+│   │   │   └── dashboard/
+│   │   │       ├── layout.tsx
+│   │   │       ├── page.tsx                 # Overview
+│   │   │       ├── wardrobe/page.tsx
+│   │   │       ├── portraits/page.tsx
+│   │   │       ├── try-on/page.tsx
+│   │   │       └── history/
+│   │   │           ├── page.tsx
+│   │   │           └── [id]/page.tsx
+│   │   ├── api/
+│   │   │   ├── auth/
+│   │   │   │   ├── [...nextauth]/route.ts
+│   │   │   │   └── register/route.ts
+│   │   │   ├── portraits/
+│   │   │   │   ├── route.ts                 # GET, POST
+│   │   │   │   └── [id]/route.ts            # DELETE
+│   │   │   ├── try-on/
+│   │   │   │   ├── route.ts                 # GET, POST
+│   │   │   │   └── [id]/route.ts            # GET
+│   │   │   ├── uploadthing/
+│   │   │   │   ├── core.ts
+│   │   │   │   └── route.ts
+│   │   │   └── wardrobe/
+│   │   │       ├── route.ts                 # GET, POST
+│   │   │       └── [id]/route.ts            # DELETE
+│   │   ├── favicon.ico
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   ├── page.tsx                         # Landing
+│   │   └── providers.tsx
+│   ├── components/
+│   │   ├── auth/
+│   │   │   ├── auth-card.tsx
+│   │   │   ├── login-form.tsx
+│   │   │   ├── login-view.tsx
+│   │   │   ├── register-form.tsx
+│   │   │   └── register-view.tsx
+│   │   ├── features/
+│   │   │   ├── history/
+│   │   │   ├── overview/
+│   │   │   ├── portraits/
+│   │   │   ├── try-on/
+│   │   │   └── wardrobe/
+│   │   ├── layout/
+│   │   │   ├── auth-shell.tsx
+│   │   │   ├── dashboard-shell.tsx
+│   │   │   ├── sidebar.tsx
+│   │   │   └── user-menu.tsx
+│   │   └── ui/
+│   │       ├── button.tsx
+│   │       ├── card.tsx
+│   │       ├── empty-state.tsx
+│   │       ├── input.tsx
+│   │       ├── label.tsx
+│   │       ├── page-header.tsx
+│   │       └── skeleton.tsx
+│   ├── config/
+│   │   ├── env.ts                            # Zod env validation
+│   │   └── site.ts
+│   ├── hooks/
+│   │   ├── use-clothing.ts
+│   │   ├── use-portraits.ts
+│   │   └── use-try-on.ts
+│   ├── lib/
+│   │   ├── ai/
+│   │   │   ├── provider.ts                   # Registry + factory
+│   │   │   ├── providers/                    # Implementations
+│   │   │   ├── tagging.ts
+│   │   │   ├── try-on.ts
+│   │   │   └── types.ts                      # AIProvider interface
+│   │   ├── api/
+│   │   │   ├── guards.ts                     # requireAuth()
+│   │   │   ├── handler.ts                    # withErrorHandling()
+│   │   │   └── response.ts                   # ok(), fail()
+│   │   ├── db/
+│   │   │   ├── connect.ts                    # Mongoose cache
+│   │   │   ├── mongo-client.ts               # Auth.js MongoClient
+│   │   │   └── models/
+│   │   ├── validators/
+│   │   │   ├── auth.ts
+│   │   │   ├── clothing.ts
+│   │   │   ├── portrait.ts
+│   │   │   └── try-on.ts
+│   │   ├── api-client.ts                     # Axios instance
+│   │   ├── auth.ts                           # NextAuth config
+│   │   └── uploadthing.ts
+│   ├── types/
+│   │   ├── index.ts
+│   │   └── next-auth.d.ts
+│   └── proxy.ts                              # Route protection
+├── .env.example
+├── eslint.config.mjs
+├── next.config.ts
+├── package.json
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+├── tsconfig.json
+└── README.md
+
+---
+
+## Prerequisites
+
+- **Node.js** 20+ (LTS recommended)
+- **pnpm** 10+
+- **MongoDB** running locally or an Atlas cluster
+- Accounts on **[OpenAI](https://platform.openai.com)** and **[UploadThing](https://uploadthing.com)**
+
+---
+
+## Quick Start
 
 ```bash
+# 1. Clone and install
+git clone https://github.com/mohammedafjal-lgtm/VirtualFit.git
+cd virtualfit
+pnpm install
+
+# 2. Configure env
+cp .env.example .env.local
+# Fill in the values (see Environment Credentials below)
+
+# 3. Ensure MongoDB is running
+lsof -i :27017   # macOS/Linux
+# or: brew services start mongodb-community
+
+# 4. Start the dev server
 pnpm dev
 ```
 
-If everything is configured correctly, you will see:
-
-```
-▲ Next.js 16.4.3 (Turbopack)
-- Local:  http://localhost:3000
-✓ Ready in ...
-```
-
-Navigate to `http://localhost:3000/register`, create an account, and upload a clothing item. If the item appears with AI-generated tags, all four credentials are working together correctly.
+Open [http://localhost:3000](http://localhost:3000), register an account, and upload a garment.
 
 ---
 
-### 🛠️ Quick Troubleshooting
+## Environment Credentials
 
-| Error | Likely cause | Fix |
+Copy these values into `.env.local` in your project root. **Never commit that file.**
+
+### Complete `.env.local` template
+
+```env
+# MongoDB
+MONGODB_URI=mongodb://localhost:27017/virtualfit
+
+# Auth.js
+AUTH_SECRET=<openssl rand -base64 32>
+AUTH_URL=http://localhost:3000
+
+# UploadThing (v7)
+UPLOADTHING_TOKEN=ut_xxxxxxxxxxxxxxxxxxxxxxxx
+
+# AI provider
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+OPENAI_VISION_MODEL=gpt-4o-mini
+OPENAI_IMAGE_MODEL=gpt-image-2.5-sunburst
+```
+
+### 1. `MONGODB_URI`
+
+**Option A — Local development (simplest)**
+
+If MongoDB is already running on your machine:
+
+```env
+MONGODB_URI=mongodb://localhost:27017/virtualfit
+```
+
+That is the full value. MongoDB creates the `virtualfit` database automatically on the first write.
+
+**Option B — MongoDB Atlas (cloud)**
+
+1. Sign in at [mongodb.com/atlas](https://www.mongodb.com/atlas).
+2. On your cluster, click **Connect**.
+3. Choose **Drivers** → **Node.js**.
+4. Copy the connection string. It looks like:
+   ```
+   mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+   ```
+5. Insert the database name `virtualfit` before the `?`:
+
+   ```env
+   MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/virtualfit?retryWrites=true&w=majority
+   ```
+
+> The same URI is used by both `src/lib/db/mongo-client.ts` (Auth.js adapter) and `src/lib/db/connect.ts` (Mongoose). Keep them pointing at the same database.
+
+### 2. `AUTH_SECRET`
+
+Generate a cryptographically secure random string (at least 32 characters):
+
+```bash
+openssl rand -base64 32
+```
+
+Or:
+
+```bash
+npm exec auth secret
+```
+
+Copy the output:
+
+```env
+AUTH_SECRET=<paste-the-generated-string>
+AUTH_URL=http://localhost:3000
+```
+
+`AUTH_SECRET` is the only strictly required Auth.js environment variable — it is used to encrypt cookies and tokens.
+
+### 3. `UPLOADTHING_TOKEN`
+
+1. Sign up or log in at [uploadthing.com](https://uploadthing.com).
+2. Create a new app.
+3. In the dashboard, go to **API Keys**.
+4. Select the **V7** tab.
+5. Click **Quick Copy** to copy the full `UPLOADTHING_TOKEN` environment variable.
+
+```env
+UPLOADTHING_TOKEN=ut_xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+In UploadThing v7, the token is a single base64‑encoded JSON object that replaces the old `UPLOADTHING_SECRET` and contains your app ID, region, and API key.
+
+### 4. `OPENAI_API_KEY`
+
+1. Sign in at [platform.openai.com](https://platform.openai.com).
+2. Go to the API keys page: [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
+3. Click **Create new secret key**.
+4. Copy the key immediately — it is shown only once and starts with `sk-`.
+
+```env
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+AI_PROVIDER=openai
+OPENAI_VISION_MODEL=gpt-4o-mini
+OPENAI_IMAGE_MODEL=gpt-image-2.5-sunburst
+```
+
+> **Billing note:** A ChatGPT Plus subscription does not fund API usage. If your API account has no free credits, add a prepaid balance before making your first request.
+
+---
+
+## AI Provider System
+
+VirtualFit does not hard‑code any AI SDK into route handlers. All calls go through the `AIProvider` interface in `src/lib/ai/types.ts`:
+
+```ts
+export interface AIProvider {
+  readonly name: string;
+  tagClothing(imageUrl: string): Promise<ClothingTags>;
+  generatePortraitTitle(imageUrl: string): Promise<string>;
+  generateTryOn(input: TryOnInput): Promise<TryOnOutput>;
+}
+```
+
+### Adding a new provider
+
+1. Create `src/lib/ai/providers/<name>.ts` implementing `AIProvider`.
+2. Register it in `src/lib/ai/providers/index.ts`:
+
+   ```ts
+   registerProvider("flux", () => new FluxProvider());
+   ```
+
+3. Switch via env:
+
+   ```env
+   AI_PROVIDER=flux
+   ```
+
+No route handlers change. No client code changes.
+
+### Current adapters
+
+| Provider | Tagging | Try‑on | Notes |
+|---|---|---|---|
+| `openai` | `gpt-4o-mini` (Responses API) | `gpt-image-2.5-sunburst` (Images Edit) | Default; accepts up to 16 images per call |
+
+---
+
+## Database Schema
+
+### `users`
+
+```ts
+{ _id, email, name, password (bcrypt), image, createdAt, updatedAt }
+```
+
+### `clothingitems`
+
+```ts
+{
+  _id, userId, imageUrl, name?,
+  tags: { category, color, style, season, description },
+  createdAt, updatedAt
+}
+```
+
+### `portraits`
+
+```ts
+{ _id, userId, imageUrl, name, createdAt, updatedAt }
+```
+
+### `tryonresults`
+
+```ts
+{
+  _id, userId, portraitId, clothingIds[],
+  resultUrl?, status: "pending" | "completed" | "failed",
+  error?, createdAt, updatedAt
+}
+```
+
+### Indexes
+
+- `clothingitems.{ userId: 1, createdAt: -1 }`
+- `portraits.{ userId: 1, createdAt: -1 }`
+- `tryonresults.{ userId: 1, createdAt: -1 }`
+
+---
+
+## API Reference
+
+All endpoints require authentication (session cookie) and return JSON.
+
+| Method | Path | Purpose |
 |---|---|---|
-| `MongooseServerSelectionError` | MongoDB isn't running (local) or IP not whitelisted (Atlas) | Start `mongod` or whitelist `0.0.0.0/0` |
-| `Missing environment variable: "MONGODB_URI"` | `.env.local` not created or variable not named exactly | Ensure the file is `.env.local` (not `.env`) and restart `pnpm dev` |
-| `Auth.js: Missing secret` | `AUTH_SECRET` is empty or too short | Regenerate with `openssl rand -base64 32` |
-| `Upload returned no URL` | UploadThing token is from the wrong tab (v6, not v7) | Copy the token from the **V7** tab in the dashboard |
-| `402 Payment Required` from Replicate | No credit in your Replicate account | Add credit at [replicate.com/account/billing](https://replicate.com/account/billing) |
-| `Can't resolve 'mongodb'` | `mongodb` package not installed | Run `pnpm add mongodb` |
+| `POST` | `/api/auth/register` | Create account |
+| `GET` `POST` | `/api/auth/[...nextauth]` | Auth.js handlers |
+| `GET` | `/api/wardrobe` | List user's clothing |
+| `POST` | `/api/wardrobe` | Create clothing item (runs AI tagging) |
+| `DELETE` | `/api/wardrobe/:id` | Delete owned clothing item |
+| `GET` | `/api/portraits` | List user's portraits |
+| `POST` | `/api/portraits` | Create portrait (AI title if no name) |
+| `DELETE` | `/api/portraits/:id` | Delete owned portrait |
+| `GET` | `/api/try-on` | List user's try‑on history |
+| `POST` | `/api/try-on` | Create try‑on job → `202 { jobId }` |
+| `GET` | `/api/try-on/:id` | Poll job status |
+| `GET` `POST` | `/api/uploadthing` | UploadThing handler |
+
+### Error format
+
+```json
+{ "error": "message" }
+```
+
+Validation errors (400) return a Zod `flatten()` object.
 
 ---
 
-### 🔒 Security Checklist
+## Scripts
 
-- [ ] `.env.local` is listed in `.gitignore`
-- [ ] `AUTH_SECRET` is at least 32 random bytes (not a passphrase)
-- [ ] Replicate token is stored only in env vars, never in source code
-- [ ] Production deploy (Vercel, etc.) uses a **different** `MONGODB_URI` (Atlas) than local development
-- [ ] Production deploy sets all four env vars in the platform's dashboard, not in `.env.local`
-- [ ] Atlas database user has a strong password and is not reused from any other service
+```bash
+pnpm dev          # Start dev server (Turbopack)
+pnpm build        # Production build
+pnpm start        # Run production build
+pnpm lint         # ESLint
+pnpm typecheck    # tsc --noEmit
+```
+
+---
+
+## Deployment
+
+### Vercel (recommended)
+
+1. Push the repo to GitHub.
+2. Import in Vercel.
+3. Set all env vars in **Project Settings → Environment Variables**.
+4. Use MongoDB **Atlas** (not `localhost`) — Vercel cannot reach your local `mongod`.
+5. Deploy.
+
+### Platform notes
+
+- **Runtime must be Node.js**, not Edge — `mongodb`, `bcryptjs`, and `Buffer` require it
+- Set function timeout to **60 s or more** for the try‑on route (AI generation is slow)
+- Use **separate** MongoDB databases for staging and production
+- Rotate `AUTH_SECRET` and `OPENAI_API_KEY` on a schedule
+- Persist generated try‑on images to a CDN (UploadThing or S3/R2) — not local disk
+
+### Pre‑deploy checklist
+
+- [ ] `pnpm typecheck` passes
+- [ ] `pnpm build` passes without prerender warnings
+- [ ] `.env.local` is **not** in git history
+- [ ] All env vars are set in the platform dashboard
+- [ ] MongoDB IP allowlist includes the platform's egress IPs (or `0.0.0.0/0` for serverless)
+- [ ] OpenAI account has billing credit
+- [ ] UploadThing app is on V7
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `MongooseServerSelectionError` | MongoDB down or IP not whitelisted | Start `mongod` or whitelist the IP |
+| `Missing environment variable: "MONGODB_URI"` | Env file not loaded | File must be `.env.local`; restart `pnpm dev` |
+| `Auth.js: Missing secret` | `AUTH_SECRET` empty or short | Regenerate with `openssl rand -base64 32` |
+| `Upload returned no URL` | UploadThing token from wrong tab | Copy the **V7** token |
+| `402 Payment Required` (OpenAI) | No billing credit | Add credit at `platform.openai.com/account/billing` |
+| `Unknown AI_PROVIDER` | Registry not imported | Confirm `import "./providers"` at top of `tagging.ts` and `try-on.ts` |
+| `Module not found: 'mongodb'` | `mongodb` package missing | `pnpm add mongodb` |
+| `crypto.getRandomValues()` prerender error | `auth()` outside Suspense | `await connection()` as first line of the child component |
+| `405 Method Not Allowed` on a GET route | Missing `GET` export | Add `export const GET = ...` to that `route.ts` |
+| Prerender error with `headers()` | GET route treated as static | `await connection()` at top of the handler |
+
+---
+
+## Security
+
+- `.env.local` must be in `.gitignore` — verify with `git check-ignore .env.local`
+- `AUTH_SECRET` must be **random 32+ bytes**, never a passphrase
+- Every `find` / `findOne` / `deleteOne` **must** include `userId` from the session — this is the ownership layer
+- Tokens (`OPENAI_API_KEY`, `UPLOADTHING_TOKEN`) must be server‑only — no `NEXT_PUBLIC_` prefix
+- OpenAI images are handled server‑side — never trust a client‑sent URL to be a user's own asset
+- Rate‑limit AI endpoints before opening to the public (e.g., Upstash, Vercel KV)
+- Sanitize error messages before returning to the client — never leak stack traces
+
+### Reporting
+
+Found a security issue? Email **security@your-domain** instead of opening a public issue.
+
+---
+
+## Roadmap
+
+- [ ] Pagination for wardrobe / portraits / history
+- [ ] Retry action on failed try‑on jobs
+- [ ] Bulk clothing upload
+- [ ] Saved outfit presets
+- [ ] Image preprocessing (resize before AI call — cuts cost)
+- [ ] Shareable try‑on links
+- [ ] Rate limiting on AI endpoints
+- [ ] E2E tests (Playwright)
+- [ ] Additional AI providers (Flux, Gemini)
+
+---
+
+## License
+
+MIT

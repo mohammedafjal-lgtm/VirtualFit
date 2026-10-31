@@ -1,18 +1,11 @@
-import { connection } from "next/server";
 import { withErrorHandling } from "@/lib/api/handler";
 import { requireAuth } from "@/lib/api/guards";
 import { ok, fail } from "@/lib/api/response";
 import Portrait from "@/lib/db/models/Portrait";
-import { z } from "zod";
 import { generatePortraitTitle } from "@/lib/ai/tagging";
-
-const portraitSchema = z.object({
-  imageUrl: z.string().url(),
-  name: z.string().max(120).optional(),
-});
+import { portraitSchema } from "@/lib/validators/portrait";
 
 export const GET = withErrorHandling(async () => {
-  await connection();
   const { session, response } = await requireAuth();
   if (response) return response;
 
@@ -24,7 +17,6 @@ export const GET = withErrorHandling(async () => {
 });
 
 export const POST = withErrorHandling(async (req) => {
-  await connection();
   const { session, response } = await requireAuth();
   if (response) return response;
 

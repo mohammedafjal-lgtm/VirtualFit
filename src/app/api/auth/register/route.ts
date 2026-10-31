@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { z } from "zod";
 import { connectDB } from "@/lib/db/connect";
 import User from "@/lib/db/models/User";
+import { registerSchema } from "@/lib/validators/auth";
 
-const registerSchema = z.object({
-  name: z.string().min(1).max(80),
-  email: z.string().email(),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-});
+
 
 export async function POST(req: Request) {
   try {

@@ -6,8 +6,8 @@ import type { IClothingItem } from "@/types";
 
 export function useClothing() {
   return useQuery<IClothingItem[]>({
-    queryKey: ["clothing"],
-    queryFn: async () => (await api.get("/clothing")).data,
+    queryKey: ["wardrobe"],
+    queryFn: async () => (await api.get("/wardrobe")).data,
   });
 }
 
@@ -15,8 +15,8 @@ export function useCreateClothing() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { imageUrl: string; name?: string }) =>
-      (await api.post<IClothingItem>("/clothing", input)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["clothing"] }),
+      (await api.post<IClothingItem>("/wardrobe", input)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wardrobe"] }),
   });
 }
 
@@ -24,8 +24,8 @@ export function useDeleteClothing() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/clothing/${id}`);
+      await api.delete(`/wardrobe/${id}`);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["clothing"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wardrobe"] }),
   });
 }

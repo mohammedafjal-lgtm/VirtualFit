@@ -1,4 +1,3 @@
-import { connection } from "next/server";
 import { withErrorHandling } from "@/lib/api/handler";
 import { requireAuth } from "@/lib/api/guards";
 import { ok, fail } from "@/lib/api/response";
@@ -6,7 +5,6 @@ import Portrait from "@/lib/db/models/Portrait";
 
 export const DELETE = withErrorHandling(
   async (_req, ctx: { params: Promise<{ id: string }> }) => {
-    await connection();
     const { session, response } = await requireAuth();
     if (response) return response;
 
