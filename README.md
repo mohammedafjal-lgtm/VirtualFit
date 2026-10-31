@@ -91,7 +91,7 @@ flowchart LR
     B -->|JSON| A
 ```
 
-### High-level flow
+<!-- ### High-level flow
 
 ```text
 +-------------+      HTTP      +---------------+     Mongoose     +-------------+
@@ -113,7 +113,7 @@ flowchart LR
                                |  UploadThing  |   <-- returns public URL
                                |     CDN       |
                                +---------------+
-```
+``` -->
 
 ### Key architectural decisions
 
