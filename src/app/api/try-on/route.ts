@@ -66,7 +66,11 @@ async function runTryOn(
   portraitUrl: string,
   clothes: Array<{
     imageUrl: string;
-    tags?: { category?: string; description?: string };
+    tags?: {
+      category?: string;
+      subCategory?: string;
+      description?: string;
+    };
   }>
 ) {
   try {
@@ -75,6 +79,7 @@ async function runTryOn(
       garmentImageUrls: clothes.map((c) => c.imageUrl),
       garmentDescriptions: clothes.map((c) => c.tags?.description ?? ""),
       garmentCategories: clothes.map((c) => c.tags?.category ?? ""),
+      garmentSubCategories: clothes.map((c) => c.tags?.subCategory ?? ""),
     });
 
     await TryOnResult.findByIdAndUpdate(jobId, {

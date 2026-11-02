@@ -5,9 +5,9 @@ export function TryOnView() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Try on"
-        description="Pick a portrait, select up to 4 clothing items, and let AI generate the look."
-      />
+  title="Try on"
+  description="Pick a portrait, select 1–10 items (tops, bottoms, shoes, watches, hats, belts…), and let AI generate the full look."
+/>
       <OutfitBuilder />
     </div>
   );

@@ -38,62 +38,83 @@ export class OpenAIProvider implements AIProvider {
               {
                 type: "input_text",
                 text:
-                  "You are a fashion expert. Analyze the clothing item in the image. " +
-                  "Return ONLY valid JSON with keys: category (upper_body | lower_body | dresses | full_body), " +
-                  "color, style, season, description. " +
-                  "If the image shows a complete matching outfit (like a suit, set, or jumpsuit), use 'full_body'. " +
+                  "You are a fashion expert. Analyze the clothing or accessory item in the image. " +
+                  "Return ONLY valid JSON with keys: category, subCategory, color, style, season, description. " +
+                  'category must be one of: ' +
+                  '"upper_body" (shirts, tops, sweaters, jackets), ' +
+                  '"lower_body" (pants, jeans, skirts, shorts), ' +
+                  '"dresses", ' +
+                  '"full_body" (suits, jumpsuits, matching sets), ' +
+                  '"shoes" (sneakers, boots, sandals, heels, loafers), ' +
+                  '"accessory" (watch, hat, cap, belt, bag, jewelry, glasses, scarf, tie). ' +
+                  'subCategory must be the specific item type in lowercase ' +
+                  '(e.g. "t-shirt", "jeans", "sneakers", "watch", "hat", "belt"). ' +
+                  "If the image shows a complete matching outfit (suit, set, jumpsuit), use 'full_body'. " +
                   "No markdown, no extra text.",
               },
-              {
-                type: "input_image",
-                image_url: imageUrl,
-                detail: "auto",
-              },
+              { type: "input_image", image_url: imageUrl, detail: "auto" },
             ],
           },
         ],
-        max_output_tokens: 200,
+        max_output_tokens: 250,
       });
-
+  
       const text = response.output_text ?? "";
       const match = text.match(/\{[\s\S]*\}/);
       if (!match) return {};
-
+  
       const parsed = JSON.parse(match[0]) as ClothingTags;
-
-      const validCategories = ["upper_body", "lower_body", "dresses", "full_body"];
-      
-      // Intercept hallucinated categories (e.g., "suit", "outfit") and map them correctly
+  
+      const validCategories = [
+        "upper_body",
+        "lower_body",
+        "dresses",
+        "full_body",
+        "shoes",
+        "accessory",
+      ];
+  
+      // Intercept hallucinated categories and remap them.
       if (parsed.category && !validCategories.includes(parsed.category)) {
-        const lowerCat = parsed.category.toLowerCase();
-        
+        const lc = parsed.category.toLowerCase();
+  
         if (
-          lowerCat.includes("suit") || 
-          lowerCat.includes("set") || 
-          lowerCat.includes("full") || 
-          lowerCat.includes("outfit") ||
-          lowerCat.includes("jumpsuit")
+          lc.includes("shoe") || lc.includes("sneaker") || lc.includes("boot") ||
+          lc.includes("sandal") || lc.includes("heel") || lc.includes("loafer")
+        ) {
+          parsed.category = "shoes";
+        } else if (
+          lc.includes("watch") || lc.includes("hat") || lc.includes("cap") ||
+          lc.includes("belt") || lc.includes("bag") || lc.includes("jewel") ||
+          lc.includes("glasses") || lc.includes("scarf") || lc.includes("tie") ||
+          lc.includes("accessor")
+        ) {
+          parsed.category = "accessory";
+        } else if (
+          lc.includes("suit") || lc.includes("set") || lc.includes("full") ||
+          lc.includes("outfit") || lc.includes("jumpsuit")
         ) {
           parsed.category = "full_body";
         } else if (
-          lowerCat.includes("pant") || 
-          lowerCat.includes("skirt") || 
-          lowerCat.includes("short") || 
-          lowerCat.includes("jeans") ||
-          lowerCat.includes("trouser")
+          lc.includes("pant") || lc.includes("skirt") || lc.includes("short") ||
+          lc.includes("jeans") || lc.includes("trouser")
         ) {
           parsed.category = "lower_body";
-        } else if (lowerCat.includes("dress")) {
+        } else if (lc.includes("dress")) {
           parsed.category = "dresses";
         } else {
-          parsed.category = "upper_body"; // Final fallback
+          parsed.category = "upper_body";
         }
       }
-
+  
+      if (parsed.subCategory) {
+        parsed.subCategory = String(parsed.subCategory).toLowerCase().trim();
+      }
+  
       return parsed;
     } catch (err) {
       console.error("[OPENAI TAGGING ERROR]", err);
-      return {}; // never block upload
+      return {};
     }
   }
 
@@ -135,30 +156,54 @@ export class OpenAIProvider implements AIProvider {
 
   async generateTryOn(input: TryOnInput): Promise<TryOnOutput> {
     const model = process.env.OPENAI_IMAGE_MODEL ?? DEFAULT_MODEL;
-
+  
     const files = await Promise.all([
       this.urlToFile(input.personImageUrl, "person.png"),
       ...input.garmentImageUrls.map((url, i) =>
         this.urlToFile(url, `garment-${i + 1}.png`)
       ),
     ]);
-
-    const garmentList = input.garmentDescriptions?.length
-      ? input.garmentDescriptions
-          .map((d, i) => `Garment ${i + 1}: ${d}`)
-          .join("\n")
-      : `There are ${input.garmentImageUrls.length} garment image(s) after the person image.`;
-
+  
+    const garmentList = input.garmentImageUrls
+      .map((_, i) => {
+        const desc = input.garmentDescriptions?.[i]?.trim();
+        const cat = input.garmentCategories?.[i]?.trim();
+        const sub = input.garmentSubCategories?.[i]?.trim();
+        const label = [sub, cat].filter(Boolean).join(" / ");
+        const head = label ? `Garment ${i + 1} [${label}]` : `Garment ${i + 1}`;
+        return desc ? `${head}: ${desc}` : head;
+      })
+      .join("\n");
+  
     const prompt = `
-Edit the first image (the person) to dress them using the provided garment images.
-${garmentList}
-
-Do not change the person's face, facial features, skin tone, body shape, pose, or identity in any way. Preserve their exact likeness, expression, hairstyle, and proportions.
-Replace only the clothing, fitting the garments naturally to the existing pose and body geometry with realistic fabric behavior.
-Match lighting, shadows, and color temperature to the original photo so the outfit integrates photorealistically.
-Do not change the background, camera angle, framing, or image quality, and do not add accessories, text, logos, or watermarks.
-`.trim();
-
+  Edit the first image (the person) to dress them using the provided garment images.
+  
+  Garments to apply:
+  ${garmentList}
+  
+  Placement rules by category:
+  - "upper_body" (shirts, tops, sweaters, jackets) replace the person's upper-body clothing.
+  - "lower_body" (pants, jeans, skirts) replace the person's lower-body clothing.
+  - "dresses" and "full_body" items replace the person's full outfit with that piece.
+  - "shoes" replace the person's footwear.
+  - "accessory" items are placed on the person at the correct position: hat on head,
+    watch on wrist, belt at waist, glasses on face, bag over shoulder or in hand,
+    scarf around neck, tie at collar, jewelry on the appropriate body part.
+  
+  Partial-outfit rule:
+  If only some items are provided, keep the person's existing clothing and accessories
+  for everything that was NOT supplied. For example, if only a shirt is provided, change
+  only the shirt and preserve the existing pants, shoes, and any other items.
+  
+  Constraints:
+  - Do not change the person's face, facial features, skin tone, body shape, pose, or
+    identity in any way. Preserve their exact likeness, expression, hairstyle, and proportions.
+  - Fit each garment naturally to the existing pose and body geometry, with realistic fabric behavior.
+  - Match lighting, shadows, and color temperature to the original photo so the outfit integrates photorealistically.
+  - Do not change the background, camera angle, framing, or image quality.
+  - Do not add extra accessories, text, logos, or watermarks that were not provided.
+  `.trim();
+  
     const response = await this.client.images.edit({
       model,
       image: files,
@@ -167,14 +212,13 @@ Do not change the background, camera angle, framing, or image quality, and do no
       size: "1024x1536",
       quality: "medium",
     });
-
+  
     const result = response.data?.[0];
     if (!result?.b64_json) {
       throw new Error("OpenAI returned no image data");
     }
-
+  
     const resultUrl = await this.persistBase64Image(result.b64_json);
-
     return { resultUrl, raw: result };
   }
 

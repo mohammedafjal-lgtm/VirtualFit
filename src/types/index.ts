@@ -1,5 +1,6 @@
 export interface ClothingTags {
-  category?: string; // upper_body, lower_body, dresses, full_body
+  category?: string; // upper_body | lower_body | dresses | full_body | shoes | accessory
+  subCategory?: string; // t-shirt, jeans, sneakers, watch, hat, belt, bag, glasses, ...
   color?: string;
   style?: string;
   season?: string;

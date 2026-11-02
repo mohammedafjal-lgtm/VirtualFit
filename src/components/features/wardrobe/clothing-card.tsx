@@ -23,13 +23,13 @@ export function ClothingCard({ item }: { item: IClothingItem }) {
     <div className="group relative rounded-xl bg-white border border-slate-200 overflow-hidden">
       <img src={item.imageUrl} alt={item.name ?? "clothing"} className="aspect-square w-full object-cover" />
       <div className="p-3">
-        <p className="text-sm font-medium text-slate-900 capitalize">
-          {item.tags?.category?.replace("_", " ") ?? "Uncategorized"}
-        </p>
-        <p className="text-xs text-slate-500 truncate">
-          {[item.tags?.color, item.tags?.style].filter(Boolean).join(" · ") || "No tags"}
-        </p>
-      </div>
+  <p className="text-sm font-medium text-slate-900 capitalize">
+    {item.tags?.subCategory ?? item.tags?.category?.replace("_", " ") ?? "Uncategorized"}
+  </p>
+  <p className="text-xs text-slate-500 truncate">
+    {[item.tags?.color, item.tags?.style].filter(Boolean).join(" · ") || "No tags"}
+  </p>
+</div>
       <button
         onClick={handleDelete}
         disabled={del.isPending}

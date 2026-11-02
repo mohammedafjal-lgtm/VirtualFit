@@ -28,11 +28,8 @@ export function UploadClothingForm() {
 
       try {
         const item = await create.mutateAsync({ imageUrl: url });
-        toast.success(
-          item.tags?.category
-            ? `Tagged as ${item.tags.category.replace("_", " ")}`
-            : "Item added"
-        );
+        const label = item.tags?.subCategory ?? item.tags?.category;
+        toast.success(label ? `Tagged as ${label.replace("_", " ")}` : "Item added");
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to save");
       }

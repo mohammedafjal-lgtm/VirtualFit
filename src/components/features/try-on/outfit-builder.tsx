@@ -10,7 +10,7 @@ import { Sparkles} from "lucide-react";
 import { clsx } from "clsx";
 import { TryOnResult } from "@/components/features/try-on/try-on-result";
 
-const MAX_ITEMS = 4;
+const MAX_ITEMS = 10;
 
 export function OutfitBuilder() {
   const { data: portraits = [], isLoading: loadingPortraits } = usePortraits();
@@ -113,12 +113,12 @@ export function OutfitBuilder() {
         </section>
 
         <section>
-          <h2 className="font-medium text-slate-900 mb-3">
-            2. Select clothes{" "}
-            <span className="text-xs font-normal text-slate-500">
-              ({selected.length}/{MAX_ITEMS})
-            </span>
-          </h2>
+        <h2 className="font-medium text-slate-900 mb-3">
+    2. Select clothes & accessories{" "}
+    <span className="text-xs font-normal text-slate-500">
+      ({selected.length}/{MAX_ITEMS} · mix tops, bottoms, shoes, watches, hats, belts…)
+    </span>
+  </h2>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
             {clothes.map((c) => {
               const isSel = selected.includes(c._id);
@@ -138,9 +138,9 @@ export function OutfitBuilder() {
                     alt={c.name ?? "clothing"}
                     className="aspect-square w-full object-cover"
                   />
-                  <div className="p-1.5 text-xs text-slate-600 capitalize truncate">
-                    {c.tags?.category?.replace("_", " ") ?? "item"}
-                  </div>
+                <div className="p-1.5 text-xs text-slate-600 capitalize truncate">
+  {c.tags?.subCategory ?? c.tags?.category?.replace("_", " ") ?? "item"}
+</div>
                 </button>
               );
             })}
@@ -158,13 +158,10 @@ export function OutfitBuilder() {
           ) : (
             <ul className="space-y-1.5">
               {selectedClothes.map((c) => (
-                <li
-                  key={c._id}
-                  className="text-sm text-slate-700 capitalize truncate"
-                >
-                  • {c.tags?.category?.replace("_", " ") ?? "item"}
-                  {c.tags?.color ? ` — ${c.tags.color}` : ""}
-                </li>
+              <li key={c._id} className="text-sm text-slate-700 capitalize truncate">
+              • {c.tags?.subCategory ?? c.tags?.category?.replace("_", " ") ?? "item"}
+              {c.tags?.color ? ` — ${c.tags.color}` : ""}
+            </li>
               ))}
             </ul>
           )}

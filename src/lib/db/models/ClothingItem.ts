@@ -6,7 +6,8 @@ export interface IClothingItem {
   imageUrl: string;
   name?: string;
   tags: {
-    category?: string; // upper_body, lower_body, dresses
+    category?: string; // upper_body | lower_body | dresses | full_body | shoes | accessory
+    subCategory?: string; // t-shirt, jeans, sneakers, watch, hat, belt, bag, glasses, ...
     color?: string;
     style?: string;
     season?: string;
@@ -22,6 +23,7 @@ const ClothingItemSchema = new Schema<IClothingItem>(
     name: { type: String },
     tags: {
       category: String,
+      subCategory: String,
       color: String,
       style: String,
       season: String,
