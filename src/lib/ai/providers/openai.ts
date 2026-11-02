@@ -236,22 +236,37 @@ export class OpenAIProvider implements AIProvider {
   private async persistBase64Image(b64: string): Promise<string> {
     const buffer = Buffer.from(b64, "base64");
     const filename = `tryon-${crypto.randomUUID()}.png`;
+    
+    let lastError: Error | null = null;
 
-    const upload = await this.utApi.uploadFiles(
-      new File([buffer], filename, { type: "image/png" })
-    );
+    // Try up to 3 times
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const upload = await this.utApi.uploadFiles(
+          new File([buffer], filename, { type: "image/png" })
+        );
 
-    if (upload.error || !upload.data) {
-      throw new Error(
-        `Failed to persist generated image: ${upload.error?.message ?? "unknown error"}`
-      );
+        if (upload.error || !upload.data) {
+          throw new Error(upload.error?.message ?? "UploadThing returned an error");
+        }
+
+        const url = upload.data.ufsUrl ?? upload.data.url;
+        if (!url) {
+          throw new Error("UploadThing returned no URL for the generated image");
+        }
+
+        return url;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.warn(`[UPLOADTHING RETRY] Attempt ${attempt} failed: ${lastError.message}`);
+        
+        if (attempt < 3) {
+          // Wait 2 seconds before retrying
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
     }
 
-    const url = upload.data.ufsUrl ?? upload.data.url;
-    if (!url) {
-      throw new Error("UploadThing returned no URL for the generated image");
-    }
-
-    return url;
+    throw new Error(`Failed to persist generated image after 3 attempts: ${lastError?.message}`);
   }
 }
